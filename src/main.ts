@@ -8,12 +8,15 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
 import { mkdir } from 'fs/promises';
 
+
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   
   const configService = app.get(ConfigService);
-  // Global prefix
-  app.setGlobalPrefix('api');
+  // Add global prefix with exclusions
+  app.setGlobalPrefix('api', {
+    exclude: ['/public/*']
+  });
   
   // CORS
   app.enableCors(createCorsConfig(configService));
@@ -23,7 +26,9 @@ async function bootstrap() {
     new ValidationPipe({
       whitelist: true,
       transform: true,
-      forbidNonWhitelisted: true,
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
     }),
   );
   
@@ -33,7 +38,7 @@ async function bootstrap() {
   // Ensure uploads directory exists
   const uploadsPath = join(process.cwd(), 'public', 'uploads', 'images');
   await mkdir(uploadsPath, { recursive: true });
-
+  
   // Configure static file serving
   app.useStaticAssets(join(process.cwd(), 'public'), {
     prefix: '/public',

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module,NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { validationSchema } from '@/config/env.validation';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AppController } from '@/app.controller';
@@ -6,6 +6,9 @@ import { AppService } from '@/app.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UsersModule } from '@/modules/users/users.module';
 import { User } from '@/modules/users/entities/user.entity';
+import { AuthModule } from '@/modules/auth/auth.module';
+import { MediaController } from '@/common/controllers/media.controller';
+import { MediaService } from '@/common/services/media.service';
 
 @Module({
   imports: [
@@ -27,8 +30,10 @@ import { User } from '@/modules/users/entities/user.entity';
       }),
     }),
     UsersModule,
+    AuthModule,
   ],
-  controllers: [AppController],
-  providers: [AppService],
+  controllers: [AppController, MediaController],
+  providers: [AppService, MediaService],
 })
 export class AppModule {}
+

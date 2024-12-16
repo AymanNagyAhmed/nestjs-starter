@@ -21,7 +21,12 @@ export const createCorsConfig = (configService: ConfigService): CorsOptions => (
     'X-Requested-With',
     'Range',
     'Origin',
+    'Content-Disposition',
   ],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  exposedHeaders: [
+    'Content-Range',
+    'X-Content-Range',
+    'Content-Disposition',
+  ],
   maxAge: 3600,
 }); 

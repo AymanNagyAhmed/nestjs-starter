@@ -8,6 +8,8 @@ import { ApiResponse } from '@/common/interfaces/api-response.interface';
 import { ApiResponseUtil } from '@/common/utils/api-response.util';
 import { ApplicationException } from '@/common/exceptions/application.exception';
 import * as bcrypt from 'bcryptjs';
+import * as bcryptjs from 'bcryptjs';
+
 
 @Injectable()
 export class UsersService {
@@ -19,33 +21,51 @@ export class UsersService {
         private readonly usersRepository: Repository<User>,
     ) {}
 
-    async create(createUserDto: CreateUserDto): Promise<ApiResponse<User>> {
+    async create(createUserDto: CreateUserDto, profileImage?: Express.Multer.File): Promise<ApiResponse<Omit<User, 'password'>>> {
         try {
+            const existingUser = await this.usersRepository.findOne({
+                where: { email: createUserDto.email }
+            });
+
+            if (existingUser) {
+                throw new ApplicationException(
+                    'User with this email already exists',
+                    HttpStatus.BAD_REQUEST,
+                    this.BASE_PATH
+                );
+            }
+
             const hashedPassword = await bcrypt.hash(createUserDto.password, this.SALT_ROUNDS);
+            
+            let profileImagePath: string | null = null;
+            if (profileImage) {
+                profileImagePath = `public/uploads/images/${profileImage.filename}`;
+            }
+            
             const user = this.usersRepository.create({
                 ...createUserDto,
                 password: hashedPassword,
+                profileImage: profileImagePath,
             });
+            
             const savedUser = await this.usersRepository.save(user);
+            const { password: _, ...userWithoutPassword } = savedUser;
             
             return ApiResponseUtil.success(
-                savedUser,
+                userWithoutPassword,
                 'User created successfully',
                 this.BASE_PATH,
                 HttpStatus.CREATED
             );
         } catch (error) {
+            if (error instanceof ApplicationException) {
+                throw error;
+            }
             throw new ApplicationException(
                 'Failed to create user',
                 HttpStatus.BAD_REQUEST,
                 this.BASE_PATH,
-                [
-                    {
-                        message: error.message,
-                        path: this.BASE_PATH,
-                        timestamp: new Date().toISOString()
-                    }
-                ]
+                [{ message: error.message }]
             );
         }
     }
@@ -57,7 +77,7 @@ export class UsersService {
                 name: true,
                 email: true,
                 status: true,
-                images: true,
+                profileImage: true,
                 createdAt: true,
                 updatedAt: true,
             }
@@ -81,44 +101,60 @@ export class UsersService {
     }
 
     async update(id: number, updateUserDto: UpdateUserDto): Promise<ApiResponse<User>> {
-        await this.findUserById(id);
+        const user = await this.findUserById(id);
+        if (!user) {
+            throw new NotFoundException(`User with ID ${id} not found`);
+        }
+
+        let hashedPassword: string | undefined;
+        if (updateUserDto.password) {
+            const salt = await bcryptjs.genSalt(10);
+            hashedPassword = await bcryptjs.hash(updateUserDto.password, salt);
+        }
+
+        // Handle profile image path - extract only the relative path
+        let profileImage = updateUserDto.profileImage;
+        if (profileImage) {
+            try {
+                const url = new URL(profileImage);
+                // Extract the path starting from 'public/uploads/...'
+                const pathMatch = url.pathname.match(/\/?public\/uploads\/.*$/);
+                if (pathMatch) {
+                    profileImage = pathMatch[0].replace(/^\//, ''); // Remove leading slash if present
+                }
+            } catch (e) {
+                // If it's not a valid URL, assume it's already a relative path
+                profileImage = updateUserDto.profileImage;
+            }
+        }
 
         try {
-            if (updateUserDto.password) {
-                updateUserDto.password = await bcrypt.hash(
-                    updateUserDto.password,
-                    this.SALT_ROUNDS
-                );
-            }
-
-            const user = await this.usersRepository.preload({
+            // First update the user
+            await this.usersRepository.update(
                 id,
-                ...updateUserDto,
-            });
+                {
+                    email: updateUserDto.email,
+                    password: hashedPassword,
+                    name: updateUserDto.name,
+                    profileImage: profileImage,
+                }
+            );
 
-            if (!user) {
-                throw new ApplicationException(
-                    `User with ID ${id} not found`,
-                    HttpStatus.NOT_FOUND,
-                    `${this.BASE_PATH}/${id}`
-                );
-            }
+            // Then fetch the updated user
+            const updatedUser = await this.findUserById(id);
 
-            const updatedUser = await this.usersRepository.save(user);
-            
             return ApiResponseUtil.success(
                 updatedUser,
                 'User updated successfully',
                 `${this.BASE_PATH}/${id}`
             );
         } catch (error) {
-            if (error instanceof ApplicationException) {
-                throw error;
-            }
+            console.log(error);
             throw new ApplicationException(
                 'Failed to update user',
                 HttpStatus.BAD_REQUEST,
-                `${this.BASE_PATH}/${id}`
+                `${this.BASE_PATH}/${id}`,
+                [{ message: error.message }]
             );
         }
     }
@@ -138,7 +174,8 @@ export class UsersService {
             throw new ApplicationException(
                 'Failed to delete user',
                 HttpStatus.BAD_REQUEST,
-                `${this.BASE_PATH}/${id}`
+                `${this.BASE_PATH}/${id}`,
+                [{ message: error.message }]
             );
         }
     }
@@ -152,7 +189,7 @@ export class UsersService {
                     name: true,
                     email: true,
                     status: true,
-                    images: true,
+                    profileImage: true,
                     createdAt: true,
                     updatedAt: true,
                 }
@@ -174,8 +211,24 @@ export class UsersService {
             throw new ApplicationException(
                 `Invalid user ID: ${id}`,
                 HttpStatus.BAD_REQUEST,
-                `${this.BASE_PATH}/${id}`
+                `${this.BASE_PATH}/${id}`,
+                [{ message: error.message }]
             );
         }
+    }
+
+    // Method used by auth service
+    async findUserByEmail(email: string): Promise<User | null> {
+        return this.usersRepository.findOne({
+            where: { email },
+            select: {
+                id: true,
+                email: true,
+                password: true,
+                name: true,
+                status: true,
+                profileImage: true,
+            }
+        });
     }
 }

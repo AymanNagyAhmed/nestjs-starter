@@ -15,8 +15,8 @@ export class User {
   @Column('varchar', { length: 255, default: 'active' })
   status: string;
 
-  @Column('simple-json', { nullable: true })
-  images: string[];
+  @Column('text', { nullable: true })
+  profileImage: string;
   
   @Column('text', { select: false })
   @Exclude()
